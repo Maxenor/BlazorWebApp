@@ -1,0 +1,280 @@
+@page "/events"
+@using BlazorWebApp.Application.DTOs
+@using BlazorWebApp.Application.Interfaces
+@using BlazorWebApp.Domain.Entities
+@inject IEventService EventService
+@inject ICategoryService CategoryService
+@inject ILogger<EventManager> Logger
+@rendermode InteractiveServer
+
+<h1>Event Management</h1>
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger" role="alert">
+        @errorMessage
+    </div>
+}
+
+<EditForm Model="@newEvent" OnValidSubmit="@HandleValidSubmit" FormName="eventForm">
+    <DataAnnotationsValidator />
+
+    <div class="form-group mb-3">
+        <label for="eventTitle">Event Title</label>
+        <InputText id="eventTitle" @bind-Value="newEvent.Title" class="form-control" placeholder="Enter event title" />
+        <ValidationMessage For="@(() => newEvent.Title)" />
+    </div>
+
+    <div class="form-group mb-3">
+        <label for="eventDescription">Description (Optional)</label>
+        <InputTextArea id="eventDescription" @bind-Value="newEvent.Description" class="form-control" placeholder="Enter event description" rows="3" />
+        <ValidationMessage For="@(() => newEvent.Description)" />
+    </div>
+
+    <div class="row">
+        <div class="col-md-6 form-group mb-3">
+            <label for="eventStartDate">Start Date</label>
+            <InputDate id="eventStartDate" @bind-Value="newEvent.StartDate" class="form-control" />
+            <ValidationMessage For="@(() => newEvent.StartDate)" />
+        </div>
+        <div class="col-md-6 form-group mb-3">
+            <label for="eventEndDate">End Date</label>
+            <InputDate id="eventEndDate" @bind-Value="newEvent.EndDate" class="form-control" />
+            <ValidationMessage For="@(() => newEvent.EndDate)" />
+        </div>
+    </div>
+
+    <div class="form-group mb-3">
+        <label for="eventCategory">Category</label>
+        <InputSelect id="eventCategory" @bind-Value="newEvent.CategoryId" class="form-control">
+            <option value="0">-- Select a category --</option>
+            @foreach (var category in categories)
+            {
+                <option value="@category.Id">@category.Name</option>
+            }
+        </InputSelect>
+        <ValidationMessage For="@(() => newEvent.CategoryId)" />
+    </div>
+
+    <div class="form-group mb-3">
+        <label for="eventLocation">Location</label>
+        <InputNumber id="eventLocation" @bind-Value="newEvent.LocationId" class="form-control" />
+        <ValidationMessage For="@(() => newEvent.LocationId)" />
+        <small class="form-text text-muted">Enter location ID (future enhancement will include a dropdown)</small>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Add Event</button>
+</EditForm>
+
+<hr />
+
+<h2>Existing Events</h2>
+
+@if (isLoading)
+{
+    <div class="d-flex align-items-center">
+        <div class="spinner-border text-primary me-2" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <em>Loading events...</em>
+    </div>
+}
+
+@if (!isLoading && events.Any())
+{
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Start Date</th>
+                    <th>End Date</th>
+                    <th>Category</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var eventItem in events)
+                {
+                    <tr>
+                        <td>@eventItem.Title</td>
+                        <td>@eventItem.StartDate.ToString("dd/MM/yyyy HH:mm")</td>
+                        <td>@eventItem.EndDate.ToString("dd/MM/yyyy HH:mm")</td>
+                        <td>@GetCategoryName(eventItem.CategoryId)</td>
+                        <td>
+                            <button class="btn btn-danger btn-sm" @onclick="@(() => InitiateDelete(eventItem))">
+                                Delete
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+else if (!isLoading && !events.Any() && string.IsNullOrEmpty(errorMessage))
+{
+    <p><em>No events found. Add one using the form above.</em></p>
+}
+
+@if (showDeleteConfirmation && eventToDelete != null)
+{
+    <div class="modal fade show" style="display: block;" aria-modal="true" role="dialog">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Confirm Deletion</h5>
+                    <button type="button" class="btn-close" @onclick="CancelDelete" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete the event: <strong>@eventToDelete.Title</strong>?</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CancelDelete">Cancel</button>
+                    <button type="button" class="btn btn-danger" @onclick="ConfirmDelete">Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@code {
+    private List<Event> events = new();
+    private List<Category> categories = new();
+    private EventDto newEvent = new() 
+    { 
+        StartDate = DateTime.Today, 
+        EndDate = DateTime.Today.AddHours(1) 
+    };
+    private bool isLoading = false;
+    private string? errorMessage = null;
+    private Event? eventToDelete = null;
+    private bool showDeleteConfirmation = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCategories();
+        await LoadEvents();
+    }
+
+    private async Task LoadCategories()
+    {
+        try
+        {
+            var result = await CategoryService.GetAllCategoriesAsync();
+            categories = result.ToList();
+            Console.WriteLine($"Loaded {categories.Count} categories: {string.Join(", ", categories.Select(c => $"{c.Id}:{c.Name}"))}");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading categories: {ex.Message}";
+            Logger.LogError(ex, "Error occurred while loading categories");
+        }
+    }
+
+    private async Task LoadEvents()
+    {
+        isLoading = true;
+        errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await EventService.GetAllEventsAsync();
+            events = result.ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading events: {ex.Message}";
+            Logger.LogError(ex, "Error occurred while loading events");
+            events.Clear();
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        if (newEvent.EndDate <= newEvent.StartDate)
+        {
+            errorMessage = "End date must be after start date";
+            return;
+        }
+
+        errorMessage = null;
+
+        try
+        {
+            await EventService.CreateEventAsync(newEvent);
+            // Reset form with default dates
+            newEvent = new EventDto
+            {
+                StartDate = DateTime.Today,
+                EndDate = DateTime.Today.AddHours(1)
+            };
+            await LoadEvents();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error creating event: {ex.Message}";
+            Logger.LogError(ex, "Error occurred while creating event");
+            StateHasChanged();
+        }
+    }
+
+    private void InitiateDelete(Event eventItem)
+    {
+        eventToDelete = eventItem;
+        showDeleteConfirmation = true;
+        errorMessage = null;
+        StateHasChanged();
+    }
+
+    private async Task ConfirmDelete()
+    {
+        if (eventToDelete == null) return;
+
+        showDeleteConfirmation = false;
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var success = await EventService.DeleteEventAsync(eventToDelete.Id);
+            if (!success)
+            {
+                errorMessage = "Failed to delete event";
+            }
+            await LoadEvents();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error deleting event: {ex.Message}";
+            Logger.LogError(ex, "Error occurred while deleting event");
+            isLoading = false;
+            StateHasChanged();
+        }
+        finally
+        {
+            eventToDelete = null;
+        }
+    }
+
+    private void CancelDelete()
+    {
+        eventToDelete = null;
+        showDeleteConfirmation = false;
+        StateHasChanged();
+    }
+
+    private string GetCategoryName(int categoryId)
+    {
+        var category = categories.FirstOrDefault(c => c.Id == categoryId);
+        Console.WriteLine($"Looking up category ID {categoryId}: {(category != null ? $"Found - {category.Name}" : "Not found")}");
+        return category?.Name ?? $"Unknown (ID: {categoryId})";
+    }
+}
