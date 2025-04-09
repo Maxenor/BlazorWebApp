@@ -27,7 +27,7 @@ builder.Services.AddHttpClient(Microsoft.Extensions.Options.Options.DefaultName,
 // Register repositories
 builder.Services.AddScoped<ICategoryRepository, HttpCategoryRepository>();
 builder.Services.AddScoped<IEventRepository, HttpEventRepository>();
-builder.Services.AddScoped<ILocationRepository, HttpLocationRepository>();
+  builder.Services.AddScoped<ILocationRepository, HttpLocationRepository>();
 
 // Register services
 builder.Services.AddScoped<ICategoryService, CategoryService>();

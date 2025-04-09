@@ -4,6 +4,7 @@
 @using BlazorWebApp.Domain.Entities
 @inject IEventService EventService
 @inject ICategoryService CategoryService
+@inject ILocationService LocationService
 @inject ILogger<EventManager> Logger
 @rendermode InteractiveServer
 
@@ -58,9 +59,14 @@
 
     <div class="form-group mb-3">
         <label for="eventLocation">Location</label>
-        <InputNumber id="eventLocation" @bind-Value="newEvent.LocationId" class="form-control" />
+        <InputSelect id="eventLocation" @bind-Value="newEvent.LocationId" class="form-control">
+            <option value="0">-- Select a location --</option>
+            @foreach (var location in locations)
+            {
+                <option value="@location.Id">@location.Name</option>
+            }
+        </InputSelect>
         <ValidationMessage For="@(() => newEvent.LocationId)" />
-        <small class="form-text text-muted">Enter location ID (future enhancement will include a dropdown)</small>
     </div>
 
     <button type="submit" class="btn btn-primary">Add Event</button>
@@ -90,6 +96,7 @@
                     <th>Start Date</th>
                     <th>End Date</th>
                     <th>Category</th>
+                    <th>Location</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -100,7 +107,8 @@
                         <td>@eventItem.Title</td>
                         <td>@eventItem.StartDate.ToString("dd/MM/yyyy HH:mm")</td>
                         <td>@eventItem.EndDate.ToString("dd/MM/yyyy HH:mm")</td>
-                        <td>@GetCategoryName(eventItem.CategoryId)</td>
+                        <td>@(eventItem.Category?.Name ?? "Not specified")</td>
+                        <td>@(eventItem.Location?.Name ?? "Not specified")</td>
                         <td>
                             <button class="btn btn-danger btn-sm" @onclick="@(() => InitiateDelete(eventItem))">
                                 Delete
@@ -142,6 +150,7 @@ else if (!isLoading && !events.Any() && string.IsNullOrEmpty(errorMessage))
 @code {
     private List<Event> events = new();
     private List<Category> categories = new();
+    private List<Location> locations = new();
     private EventDto newEvent = new() 
     { 
         StartDate = DateTime.Today, 
@@ -154,8 +163,17 @@ else if (!isLoading && !events.Any() && string.IsNullOrEmpty(errorMessage))
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadCategories();
-        await LoadEvents();
+        try
+        {
+            await LoadCategories();
+            await LoadLocations();
+            await LoadEvents();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error initializing page: {ex.Message}";
+            Logger.LogError(ex, "Error occurred during page initialization");
+        }
     }
 
     private async Task LoadCategories()
@@ -173,6 +191,21 @@ else if (!isLoading && !events.Any() && string.IsNullOrEmpty(errorMessage))
         }
     }
 
+    private async Task LoadLocations()
+    {
+        try
+        {
+            var result = await LocationService.GetAllLocationsAsync();
+            locations = result.ToList();
+            Console.WriteLine($"Loaded {locations.Count} locations: {string.Join(", ", locations.Select(l => $"{l.Id}:{l.Name}"))}");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading locations: {ex.Message}";
+            Logger.LogError(ex, "Error occurred while loading locations");
+        }
+    }
+
     private async Task LoadEvents()
     {
         isLoading = true;
@@ -183,6 +216,12 @@ else if (!isLoading && !events.Any() && string.IsNullOrEmpty(errorMessage))
         {
             var result = await EventService.GetAllEventsAsync();
             events = result.ToList();
+            
+            // Debug event categories
+            foreach (var evt in events)
+            {
+                Console.WriteLine($"Event {evt.Id} ({evt.Title}) has CategoryId: {evt.CategoryId}, LocationId: {evt.LocationId}");
+            }
         }
         catch (Exception ex)
         {
@@ -275,6 +314,59 @@ else if (!isLoading && !events.Any() && string.IsNullOrEmpty(errorMessage))
     {
         var category = categories.FirstOrDefault(c => c.Id == categoryId);
         Console.WriteLine($"Looking up category ID {categoryId}: {(category != null ? $"Found - {category.Name}" : "Not found")}");
-        return category?.Name ?? $"Unknown (ID: {categoryId})";
+        
+        if (category != null)
+            return category.Name;
+            
+        // Try to load the specific category if not found in the list
+        _ = LoadSpecificCategory(categoryId);
+        return $"Loading... (ID: {categoryId})";
+    }
+    
+    private async Task LoadSpecificCategory(int categoryId)
+    {
+        try
+        {
+            var category = await CategoryService.GetCategoryByIdAsync(categoryId);
+            if (category != null && !categories.Any(c => c.Id == category.Id))
+            {
+                categories.Add(category);
+                StateHasChanged(); // Refresh the UI
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading specific category {categoryId}: {ex.Message}");
+        }
+    }
+
+    private string GetLocationName(int locationId)
+    {
+        var location = locations.FirstOrDefault(l => l.Id == locationId);
+        Console.WriteLine($"Looking up location ID {locationId}: {(location != null ? $"Found - {location.Name}" : "Not found")}");
+        
+        if (location != null)
+            return location.Name;
+            
+        // Try to load the specific location if not found in the list
+        _ = LoadSpecificLocation(locationId);
+        return $"Loading... (ID: {locationId})";
+    }
+    
+    private async Task LoadSpecificLocation(int locationId)
+    {
+        try
+        {
+            var location = await LocationService.GetLocationByIdAsync(locationId);
+            if (location != null && !locations.Any(l => l.Id == location.Id))
+            {
+                locations.Add(location);
+                StateHasChanged(); // Refresh the UI
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading specific location {locationId}: {ex.Message}");
+        }
     }
 }

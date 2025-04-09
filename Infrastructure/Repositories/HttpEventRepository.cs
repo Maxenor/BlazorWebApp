@@ -8,7 +8,7 @@ namespace BlazorWebApp.Infrastructure.Repositories;
 public class HttpEventRepository : IEventRepository
 {
     private readonly HttpClient _httpClient;
-        private const string BaseUrl = "/api/v1/events";
+    private const string BaseUrl = "/api/v1/events";
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -32,37 +32,69 @@ public class HttpEventRepository : IEventRepository
             if (string.IsNullOrEmpty(content))
                 return Enumerable.Empty<Event>();
             
-            // Try to deserialize as array first
+            // Try to deserialize using the pagination wrapper first (items property)
+            try 
+            {
+                var wrapper = JsonSerializer.Deserialize<PaginatedResponse>(content, _jsonOptions);
+                if (wrapper?.Items != null)
+                {
+                    Console.WriteLine($"Successfully parsed {wrapper.Items.Count()} events with pagination");
+                    foreach (var evt in wrapper.Items)
+                    {
+                        Console.WriteLine($"Event: {evt.Id} - {evt.Title}, Category: {evt.Category?.Name}, Location: {evt.Location?.Name}");
+                    }
+                    
+                    // Update CategoryId and LocationId from nested objects if needed
+                    foreach (var evt in wrapper.Items)
+                    {
+                        if (evt.Category != null && evt.CategoryId == 0)
+                            evt.CategoryId = evt.Category.Id;
+                            
+                        if (evt.Location != null && evt.LocationId == 0)
+                            evt.LocationId = evt.Location.Id;
+                    }
+                    
+                    return wrapper.Items;
+                }
+            }
+            catch (JsonException ex)
+            {
+                Console.WriteLine($"Failed to parse paginated response: {ex.Message}");
+                // Continue to try other formats
+            }
+            
+            // Try to deserialize as array directly
             try 
             {
                 var events = JsonSerializer.Deserialize<IEnumerable<Event>>(content, _jsonOptions);
-                return events ?? Enumerable.Empty<Event>();
+                if (events != null)
+                {
+                    Console.WriteLine($"Successfully parsed {events.Count()} events as direct array");
+                    return events;
+                }
             }
-            catch (JsonException)
+            catch (JsonException ex)
             {
-                // If direct deserialization fails, try to deserialize as a wrapper object
-                try
+                Console.WriteLine($"Failed to parse as direct array: {ex.Message}");
+            }
+            
+            // Try to deserialize as a single event
+            try
+            {
+                var singleEvent = JsonSerializer.Deserialize<Event>(content, _jsonOptions);
+                if (singleEvent != null)
                 {
-                    // Try to deserialize as a wrapper object with various common property names
-                    var wrapper = JsonSerializer.Deserialize<EventsWrapper>(content, _jsonOptions);
-                    return wrapper?.Items ?? wrapper?.Events ?? wrapper?.Data ?? 
-                           wrapper?.Results ?? Enumerable.Empty<Event>();
-                }
-                catch
-                {
-                    // If that also fails, try to deserialize a single event and wrap in a list
-                    try
-                    {
-                        var singleEvent = JsonSerializer.Deserialize<Event>(content, _jsonOptions);
-                        return singleEvent != null ? new[] { singleEvent } : Enumerable.Empty<Event>();
-                    }
-                    catch
-                    {
-                        Console.WriteLine("All deserialization attempts failed.");
-                        return Enumerable.Empty<Event>();
-                    }
+                    Console.WriteLine($"Successfully parsed single event: {singleEvent.Id} - {singleEvent.Title}");
+                    return new[] { singleEvent };
                 }
             }
+            catch (JsonException ex)
+            {
+                Console.WriteLine($"Failed to parse as single event: {ex.Message}");
+            }
+            
+            Console.WriteLine("All parsing attempts failed, returning empty collection");
+            return Enumerable.Empty<Event>();
         }
         catch (Exception ex)
         {
@@ -71,19 +103,47 @@ public class HttpEventRepository : IEventRepository
         }
     }
     
-    // Class to handle API responses that wrap events in an object
-    private class EventsWrapper
+    // Pagination response wrapper
+    private class PaginatedResponse
     {
-        public IEnumerable<Event>? Items { get; set; }
-        // Add other potential property names the API might use
-        public IEnumerable<Event>? Events { get; set; }
-        public IEnumerable<Event>? Data { get; set; }
-        public IEnumerable<Event>? Results { get; set; }
+        public IEnumerable<Event> Items { get; set; } = Enumerable.Empty<Event>();
+        public int PageNumber { get; set; }
+        public int PageSize { get; set; }
+        public int TotalCount { get; set; }
+        public int TotalPages { get; set; }
+        public bool HasPreviousPage { get; set; }
+        public bool HasNextPage { get; set; }
     }
 
     public async Task<Event?> GetByIdAsync(int id)
     {
-        return await _httpClient.GetFromJsonAsync<Event>($"{BaseUrl}/{id}");
+        try
+        {
+            var response = await _httpClient.GetAsync($"{BaseUrl}/{id}");
+            response.EnsureSuccessStatusCode();
+            
+            var content = await response.Content.ReadAsStringAsync();
+            Console.WriteLine($"API Response for event {id}: {content}");
+            
+            if (string.IsNullOrEmpty(content))
+                return null;
+                
+            var @event = JsonSerializer.Deserialize<Event>(content, _jsonOptions);
+            
+            // Update IDs from nested objects if needed
+            if (@event?.Category != null && @event.CategoryId == 0)
+                @event.CategoryId = @event.Category.Id;
+                
+            if (@event?.Location != null && @event.LocationId == 0)
+                @event.LocationId = @event.Location.Id;
+                
+            return @event;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error fetching event {id}: {ex.Message}");
+            return null;
+        }
     }
 
     public async Task<Event> CreateAsync(Event @event)
