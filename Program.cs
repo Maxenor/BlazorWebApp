@@ -27,10 +27,12 @@ builder.Services.AddHttpClient(Microsoft.Extensions.Options.Options.DefaultName,
 // Register repositories
 builder.Services.AddScoped<ICategoryRepository, HttpCategoryRepository>();
 builder.Services.AddScoped<IEventRepository, HttpEventRepository>();
+builder.Services.AddScoped<ILocationRepository, HttpLocationRepository>();
 
 // Register services
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<IEventService, EventService>();
+builder.Services.AddScoped<ILocationService, LocationService>();
 
 // Configure logging
 builder.Logging.ClearProviders();
