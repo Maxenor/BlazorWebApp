@@ -1,4 +1,7 @@
+using BlazorWebApp.Application.Interfaces;
+using BlazorWebApp.Application.Services;
 using BlazorWebApp.Components;
+using BlazorWebApp.Infrastructure.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,6 +23,10 @@ builder.Services.AddHttpClient(Microsoft.Extensions.Options.Options.DefaultName,
     }
     return handler;
 });
+
+// Register services and repositories
+builder.Services.AddScoped<ICategoryRepository, HttpCategoryRepository>();
+builder.Services.AddScoped<ICategoryService, CategoryService>();
 
 // Configure logging to write to console with more detailed information
 builder.Logging.ClearProviders();
