@@ -1,0 +1,202 @@
+@page "/categories"
+@using BlazorWebApp.Application.DTOs
+@using BlazorWebApp.Application.Interfaces
+@using BlazorWebApp.Domain.Entities
+@inject ICategoryService CategoryService
+@inject ILogger<CategoryManager> Logger
+@rendermode InteractiveServer
+
+<h1>Category Management</h1>
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger" role="alert">
+        @errorMessage
+    </div>
+}
+
+<EditForm Model="@newCategory" OnValidSubmit="@HandleValidSubmit" FormName="categoryForm">
+    <DataAnnotationsValidator />
+
+    <div class="form-group mb-3">
+        <label for="categoryName">Category Name</label>
+        <InputText id="categoryName" @bind-Value="newCategory.Name" class="form-control" placeholder="Enter category name" />
+        <ValidationMessage For="@(() => newCategory.Name)" />
+    </div>
+
+    <div class="form-group mb-3">
+        <label for="categoryDescription">Description (Optional)</label>
+        <InputTextArea id="categoryDescription" @bind-Value="newCategory.Description" class="form-control" placeholder="Enter category description" rows="3" />
+        <ValidationMessage For="@(() => newCategory.Description)" />
+    </div>
+
+    <button type="submit" class="btn btn-primary">Add Category</button>
+</EditForm>
+
+<hr />
+
+<h2>Existing Categories</h2>
+
+@if (isLoading)
+{
+    <div class="d-flex align-items-center">
+        <div class="spinner-border text-primary me-2" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <em>Loading categories...</em>
+    </div>
+}
+
+@if (!isLoading && categories.Any())
+{
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var category in categories)
+            {
+                <tr>
+                    <td>@category.Name</td>
+                    <td>@category.Description</td>
+                    <td>
+                        <button class="btn btn-danger btn-sm" @onclick="() => InitiateDelete(category)">
+                            Delete
+                        </button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else if (!isLoading && !categories.Any() && string.IsNullOrEmpty(errorMessage))
+{
+    <p><em>No categories found. Add one using the form above.</em></p>
+}
+
+@if (showDeleteConfirmation && categoryToDelete != null)
+{
+    <div class="modal fade show" style="display: block;" aria-modal="true" role="dialog">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Confirm Deletion</h5>
+                    <button type="button" class="btn-close" @onclick="CancelDelete" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete the category: <strong>@categoryToDelete.Name</strong>?</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CancelDelete">Cancel</button>
+                    <button type="button" class="btn btn-danger" @onclick="ConfirmDelete">Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@code {
+    private List<Category> categories = new();
+    private CategoryDto newCategory = new();
+    private bool isLoading = false;
+    private string? errorMessage = null;
+    private Category? categoryToDelete = null;
+    private bool showDeleteConfirmation = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCategories();
+    }
+
+    private async Task LoadCategories()
+    {
+        isLoading = true;
+        errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await CategoryService.GetAllCategoriesAsync();
+            categories = result.ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading categories: {ex.Message}";
+            Logger.LogError(ex, "Error occurred while loading categories");
+            categories.Clear();
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        errorMessage = null;
+
+        try
+        {
+            await CategoryService.CreateCategoryAsync(newCategory);
+            newCategory = new CategoryDto();
+            await LoadCategories();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error creating category: {ex.Message}";
+            Logger.LogError(ex, "Error occurred while creating category");
+            StateHasChanged();
+        }
+    }
+
+    private void InitiateDelete(Category category)
+    {
+        categoryToDelete = category;
+        showDeleteConfirmation = true;
+        errorMessage = null;
+        StateHasChanged();
+    }
+
+    private async Task ConfirmDelete()
+    {
+        if (categoryToDelete == null) return;
+
+        showDeleteConfirmation = false;
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var success = await CategoryService.DeleteCategoryAsync(categoryToDelete.Id);
+            if (!success)
+            {
+                errorMessage = "Failed to delete category";
+            }
+            await LoadCategories();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error deleting category: {ex.Message}";
+            Logger.LogError(ex, "Error occurred while deleting category");
+            isLoading = false;
+            StateHasChanged();
+        }
+        finally
+        {
+            categoryToDelete = null;
+        }
+    }
+
+    private void CancelDelete()
+    {
+        categoryToDelete = null;
+        showDeleteConfirmation = false;
+        StateHasChanged();
+    }
+}
