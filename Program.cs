@@ -24,11 +24,15 @@ builder.Services.AddHttpClient(Microsoft.Extensions.Options.Options.DefaultName,
     return handler;
 });
 
-// Register services and repositories
+// Register repositories
 builder.Services.AddScoped<ICategoryRepository, HttpCategoryRepository>();
-builder.Services.AddScoped<ICategoryService, CategoryService>();
+builder.Services.AddScoped<IEventRepository, HttpEventRepository>();
 
-// Configure logging to write to console with more detailed information
+// Register services
+builder.Services.AddScoped<ICategoryService, CategoryService>();
+builder.Services.AddScoped<IEventService, EventService>();
+
+// Configure logging
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.AddDebug();
@@ -44,7 +48,6 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
 app.UseAntiforgery();
 
 app.MapStaticAssets();
