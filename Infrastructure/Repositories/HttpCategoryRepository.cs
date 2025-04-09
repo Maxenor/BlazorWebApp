@@ -7,7 +7,7 @@ namespace BlazorWebApp.Infrastructure.Repositories;
 public class HttpCategoryRepository : ICategoryRepository
 {
     private readonly HttpClient _httpClient;
-    private const string BaseUrl = "/api/Categories";
+    private const string BaseUrl = "/api/v1/Categories";
 
     public HttpCategoryRepository(HttpClient httpClient)
     {
